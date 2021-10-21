@@ -1,8 +1,8 @@
 use super::client::Client;
 use super::score::{PeerAction, Score, ScoreState};
 use super::PeerSyncStatus;
-use crate::rpc::MetaData;
 use crate::Multiaddr;
+use crate::{rpc::MetaData, types::Subnet};
 use discv5::Enr;
 use serde::{
     ser::{SerializeStruct, Serializer},
@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 use strum::AsRefStr;
-use types::{EthSpec, SubnetId};
+use types::EthSpec;
 use PeerConnectionStatus::*;
 
 /// Information about a given connected peer.
@@ -40,7 +40,7 @@ pub struct PeerInfo<T: EthSpec> {
     /// connection.
     pub meta_data: Option<MetaData<T>>,
     /// Subnets the peer is connected to.
-    pub subnets: HashSet<SubnetId>,
+    pub subnets: HashSet<Subnet>,
     /// The time we would like to retain this peer. After this time, the peer is no longer
     /// necessary.
     #[serde(skip)]
@@ -84,17 +84,26 @@ impl<T: EthSpec> PeerInfo<T> {
         }
     }
 
-    /// Returns if the peer is subscribed to a given `SubnetId` from the metadata attnets field.
-    pub fn on_subnet_metadata(&self, subnet_id: SubnetId) -> bool {
+    /// Returns if the peer is subscribed to a given `Subnet` from the metadata attnets/syncnets field.
+    pub fn on_subnet_metadata(&self, subnet: &Subnet) -> bool {
         if let Some(meta_data) = &self.meta_data {
-            return meta_data.attnets.get(*subnet_id as usize).unwrap_or(false);
+            match subnet {
+                Subnet::Attestation(id) => {
+                    return meta_data.attnets().get(**id as usize).unwrap_or(false)
+                }
+                Subnet::SyncCommittee(id) => {
+                    return meta_data
+                        .syncnets()
+                        .map_or(false, |s| s.get(**id as usize).unwrap_or(false))
+                }
+            }
         }
         false
     }
 
-    /// Returns if the peer is subscribed to a given `SubnetId` from the gossipsub subscriptions.
-    pub fn on_subnet_gossipsub(&self, subnet_id: SubnetId) -> bool {
-        self.subnets.contains(&subnet_id)
+    /// Returns if the peer is subscribed to a given `Subnet` from the gossipsub subscriptions.
+    pub fn on_subnet_gossipsub(&self, subnet: &Subnet) -> bool {
+        self.subnets.contains(subnet)
     }
 
     /// Returns the seen IP addresses of the peer.
@@ -174,7 +183,7 @@ impl<T: EthSpec> PeerInfo<T> {
 
     /// Checks if the status is banned.
     pub fn is_banned(&self) -> bool {
-        matches!(self.connection_status, PeerConnectionStatus::Banned { .. })
+        matches!(self.score.state(), ScoreState::Banned)
     }
 
     /// Checks if the status is disconnected.
@@ -198,25 +207,16 @@ impl<T: EthSpec> PeerInfo<T> {
     // Setters
 
     /// Modifies the status to Disconnected and sets the last seen instant to now. Returns None if
-    /// no changes were made. Returns Some(bool) where the bool represents if peer became banned or
-    /// simply just disconnected.
+    /// no changes were made. Returns Some(bool) where the bool represents if peer is to now be
+    /// banned.
     pub fn notify_disconnect(&mut self) -> Option<bool> {
         match self.connection_status {
             Banned { .. } | Disconnected { .. } => None,
             Disconnecting { to_ban } => {
-                // If we are disconnecting this peer in the process of banning, we now ban the
-                // peer.
-                if to_ban {
-                    self.connection_status = Banned {
-                        since: Instant::now(),
-                    };
-                    Some(true)
-                } else {
-                    self.connection_status = Disconnected {
-                        since: Instant::now(),
-                    };
-                    Some(false)
-                }
+                self.connection_status = Disconnected {
+                    since: Instant::now(),
+                };
+                Some(to_ban)
             }
             Connected { .. } | Dialing { .. } | Unknown => {
                 self.connection_status = Disconnected {
@@ -227,26 +227,24 @@ impl<T: EthSpec> PeerInfo<T> {
         }
     }
 
-    /// Notify the we are currently disconnecting this peer, after which the peer will be
-    /// considered banned.
-    // This intermediate state is required to inform the network behaviours that the sub-protocols
-    // are aware this peer exists and it is in the process of being banned. Compared to nodes that
-    // try to connect to us and are already banned (sub protocols do not know of these peers).
+    /// Notify the we are currently disconnecting this peer. Optionally ban the peer after the
+    /// disconnect.
     pub fn disconnecting(&mut self, to_ban: bool) {
         self.connection_status = Disconnecting { to_ban }
     }
 
-    /// Modifies the status to Banned
-    pub fn ban(&mut self) {
-        self.connection_status = Banned {
-            since: Instant::now(),
-        };
-    }
-
-    /// The score system has unbanned the peer. Update the connection status
-    pub fn unban(&mut self) {
-        if let PeerConnectionStatus::Banned { since, .. } = self.connection_status {
-            self.connection_status = PeerConnectionStatus::Disconnected { since };
+    /// Modifies the status to banned or unbanned based on the underlying score.
+    pub fn update_state(&mut self) {
+        match (&self.connection_status, self.score.state()) {
+            (Disconnected { .. } | Unknown, ScoreState::Banned) => {
+                self.connection_status = Banned {
+                    since: Instant::now(),
+                }
+            }
+            (Banned { since }, ScoreState::Healthy | ScoreState::Disconnected) => {
+                self.connection_status = Disconnected { since: *since }
+            }
+            (_, _) => {}
         }
     }
 
@@ -361,7 +359,6 @@ pub enum PeerConnectionStatus {
         /// last time the peer was connected or discovered.
         since: Instant,
     },
-
     /// The peer has been banned and is disconnected.
     Banned {
         /// moment when the peer was banned.
