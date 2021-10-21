@@ -135,6 +135,7 @@ impl<E: EthSpec> Slasher<E> {
         let num_deferred = deferred.len();
         self.attestation_queue.requeue(deferred);
 
+        println!("Got a snapshot of valid attestations {}", snapshot.len());
         // Insert attestations into database.
         debug!(
             self.log,
@@ -147,6 +148,7 @@ impl<E: EthSpec> Slasher<E> {
         metrics::set_gauge(&SLASHER_NUM_ATTESTATIONS_DEFERRED, num_deferred as i64);
         metrics::set_gauge(&SLASHER_NUM_ATTESTATIONS_DROPPED, num_dropped as i64);
 
+        println!("Storing valid attestations in slasher DB");
         for attestation in snapshot.attestations.iter() {
             self.db.store_indexed_attestation(
                 txn,
@@ -155,10 +157,20 @@ impl<E: EthSpec> Slasher<E> {
             )?;
         }
 
+        println!("Grouping attestations by validator chunk index");
         // Group attestations into batches and process them.
         let grouped_attestations = snapshot.group_by_validator_index(&self.config);
+        println!(
+            "Processing {} batches",
+            grouped_attestations.subqueues.len(),
+        );
         for (subqueue_id, subqueue) in grouped_attestations.subqueues.into_iter().enumerate() {
+            let start = std::time::Instant::now();
             self.process_batch(txn, subqueue_id, subqueue.attestations, current_epoch)?;
+            println!(
+                "Processed batch in {} milliseconds",
+                start.elapsed().as_millis(),
+            );
         }
         Ok(AttestationStats { num_processed })
     }

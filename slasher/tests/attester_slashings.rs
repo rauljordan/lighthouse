@@ -5,145 +5,171 @@ use slasher::{
     test_utils::{att_slashing, indexed_att, logger, slashed_validators_from_slashings, E},
     Config, Slasher,
 };
+use ssz::{Decode, Encode};
 use std::collections::HashSet;
+use std::fs;
+use std::fs::File;
+use std::io::Read;
 use tempfile::tempdir;
 use types::{AttesterSlashing, Epoch, IndexedAttestation};
 
 #[test]
-fn double_vote_single_val() {
-    let v = vec![99];
-    let att1 = indexed_att(&v, 0, 1, 0);
-    let att2 = indexed_att(&v, 0, 1, 1);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 1);
-    slasher_test_indiv(&attestations, &slashings, 1000);
+fn process_attestations_from_file() {
+    // Get the directory path to the test data
+    let items = fs::read_dir("/tmp/attestations").unwrap();
+    // Decode all the SSZ files of indexed attestations in the directory.
+    let mut attestations = vec![];
+    for entry in items {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let mut f = File::open(path).unwrap();
+        let mut buffer = Vec::new();
+        f.read_to_end(&mut buffer).unwrap();
+        let att: IndexedAttestation<E> = IndexedAttestation::from_ssz_bytes(&buffer).unwrap();
+        attestations.push(att);
+    }
+    let slashings = hashset![];
+    let epoch = 47272;
+    println!("Processing {} attestations", attestations.len());
+    slasher_test_batch(&attestations, &slashings, epoch);
+    assert_eq!(1, 1);
 }
 
-#[test]
-fn double_vote_multi_vals() {
-    let v = vec![0, 1, 2];
-    let att1 = indexed_att(&v, 0, 1, 0);
-    let att2 = indexed_att(&v, 0, 1, 1);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 1);
-    slasher_test_indiv(&attestations, &slashings, 1000);
-}
+// #[test]
+// fn double_vote_single_val() {
+//     let v = vec![99];
+//     let att1 = indexed_att(&v, 0, 1, 0);
+//     let att2 = indexed_att(&v, 0, 1, 1);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 1);
+//     slasher_test_indiv(&attestations, &slashings, 1000);
+// }
 
-// A subset of validators double vote.
-#[test]
-fn double_vote_some_vals() {
-    let v1 = vec![0, 1, 2, 3, 4, 5, 6];
-    let v2 = vec![0, 2, 4, 6];
-    let att1 = indexed_att(&v1, 0, 1, 0);
-    let att2 = indexed_att(&v2, 0, 1, 1);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 1);
-    slasher_test_indiv(&attestations, &slashings, 1000);
-}
+// #[test]
+// fn double_vote_multi_vals() {
+//     let v = vec![0, 1, 2];
+//     let att1 = indexed_att(&v, 0, 1, 0);
+//     let att2 = indexed_att(&v, 0, 1, 1);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 1);
+//     slasher_test_indiv(&attestations, &slashings, 1000);
+// }
 
-// A subset of validators double vote, others vote twice for the same thing.
-#[test]
-fn double_vote_some_vals_repeat() {
-    let v1 = vec![0, 1, 2, 3, 4, 5, 6];
-    let v2 = vec![0, 2, 4, 6];
-    let v3 = vec![1, 3, 5];
-    let att1 = indexed_att(&v1, 0, 1, 0);
-    let att2 = indexed_att(&v2, 0, 1, 1);
-    let att3 = indexed_att(&v3, 0, 1, 0);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2, att3];
-    slasher_test_indiv(&attestations, &slashings, 1);
-    slasher_test_indiv(&attestations, &slashings, 1000);
-}
+// // A subset of validators double vote.
+// #[test]
+// fn double_vote_some_vals() {
+//     let v1 = vec![0, 1, 2, 3, 4, 5, 6];
+//     let v2 = vec![0, 2, 4, 6];
+//     let att1 = indexed_att(&v1, 0, 1, 0);
+//     let att2 = indexed_att(&v2, 0, 1, 1);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 1);
+//     slasher_test_indiv(&attestations, &slashings, 1000);
+// }
 
-// Nobody double votes, nobody gets slashed.
-#[test]
-fn no_double_vote_same_target() {
-    let v1 = vec![0, 1, 2, 3, 4, 5, 6];
-    let v2 = vec![0, 1, 2, 3, 4, 5, 7, 8];
-    let att1 = indexed_att(&v1, 0, 1, 0);
-    let att2 = indexed_att(&v2, 0, 1, 0);
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &hashset! {}, 1);
-    slasher_test_indiv(&attestations, &hashset! {}, 1000);
-}
+// // A subset of validators double vote, others vote twice for the same thing.
+// #[test]
+// fn double_vote_some_vals_repeat() {
+//     let v1 = vec![0, 1, 2, 3, 4, 5, 6];
+//     let v2 = vec![0, 2, 4, 6];
+//     let v3 = vec![1, 3, 5];
+//     let att1 = indexed_att(&v1, 0, 1, 0);
+//     let att2 = indexed_att(&v2, 0, 1, 1);
+//     let att3 = indexed_att(&v3, 0, 1, 0);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2, att3];
+//     slasher_test_indiv(&attestations, &slashings, 1);
+//     slasher_test_indiv(&attestations, &slashings, 1000);
+// }
 
-// Two groups votes for different things, no slashings.
-#[test]
-fn no_double_vote_distinct_vals() {
-    let v1 = vec![0, 1, 2, 3];
-    let v2 = vec![4, 5, 6, 7];
-    let att1 = indexed_att(&v1, 0, 1, 0);
-    let att2 = indexed_att(&v2, 0, 1, 1);
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &hashset! {}, 1);
-    slasher_test_indiv(&attestations, &hashset! {}, 1000);
-}
+// // Nobody double votes, nobody gets slashed.
+// #[test]
+// fn no_double_vote_same_target() {
+//     let v1 = vec![0, 1, 2, 3, 4, 5, 6];
+//     let v2 = vec![0, 1, 2, 3, 4, 5, 7, 8];
+//     let att1 = indexed_att(&v1, 0, 1, 0);
+//     let att2 = indexed_att(&v2, 0, 1, 0);
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &hashset! {}, 1);
+//     slasher_test_indiv(&attestations, &hashset! {}, 1000);
+// }
 
-#[test]
-fn no_double_vote_repeated() {
-    let v = vec![0, 1, 2, 3, 4];
-    let att1 = indexed_att(&v, 0, 1, 0);
-    let att2 = att1.clone();
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &hashset! {}, 1);
-    slasher_test_batch(&attestations, &hashset! {}, 1);
-    parallel_slasher_test(&attestations, hashset! {}, 1);
-}
+// // Two groups votes for different things, no slashings.
+// #[test]
+// fn no_double_vote_distinct_vals() {
+//     let v1 = vec![0, 1, 2, 3];
+//     let v2 = vec![4, 5, 6, 7];
+//     let att1 = indexed_att(&v1, 0, 1, 0);
+//     let att2 = indexed_att(&v2, 0, 1, 1);
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &hashset! {}, 1);
+//     slasher_test_indiv(&attestations, &hashset! {}, 1000);
+// }
 
-#[test]
-fn surrounds_existing_single_val_single_chunk() {
-    let v = vec![0];
-    let att1 = indexed_att(&v, 1, 2, 0);
-    let att2 = indexed_att(&v, 0, 3, 0);
-    let slashings = hashset![att_slashing(&att2, &att1)];
-    slasher_test_indiv(&[att1, att2], &slashings, 3);
-}
+// #[test]
+// fn no_double_vote_repeated() {
+//     let v = vec![0, 1, 2, 3, 4];
+//     let att1 = indexed_att(&v, 0, 1, 0);
+//     let att2 = att1.clone();
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &hashset! {}, 1);
+//     slasher_test_batch(&attestations, &hashset! {}, 1);
+//     parallel_slasher_test(&attestations, hashset! {}, 1);
+// }
 
-#[test]
-fn surrounds_existing_multi_vals_single_chunk() {
-    let validators = vec![0, 16, 1024, 300_000, 300_001];
-    let att1 = indexed_att(validators.clone(), 1, 2, 0);
-    let att2 = indexed_att(validators, 0, 3, 0);
-    let slashings = hashset![att_slashing(&att2, &att1)];
-    slasher_test_indiv(&[att1, att2], &slashings, 3);
-}
+// #[test]
+// fn surrounds_existing_single_val_single_chunk() {
+//     let v = vec![0];
+//     let att1 = indexed_att(&v, 1, 2, 0);
+//     let att2 = indexed_att(&v, 0, 3, 0);
+//     let slashings = hashset![att_slashing(&att2, &att1)];
+//     slasher_test_indiv(&[att1, att2], &slashings, 3);
+// }
 
-#[test]
-fn surrounds_existing_many_chunks() {
-    let v = vec![0];
-    let chunk_size = DEFAULT_CHUNK_SIZE as u64;
-    let att1 = indexed_att(&v, 3 * chunk_size, 3 * chunk_size + 1, 0);
-    let att2 = indexed_att(&v, 0, 3 * chunk_size + 2, 0);
-    let slashings = hashset![att_slashing(&att2, &att1)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 4 * chunk_size);
-}
+// #[test]
+// fn surrounds_existing_multi_vals_single_chunk() {
+//     let validators = vec![0, 16, 1024, 300_000, 300_001];
+//     let att1 = indexed_att(validators.clone(), 1, 2, 0);
+//     let att2 = indexed_att(validators, 0, 3, 0);
+//     let slashings = hashset![att_slashing(&att2, &att1)];
+//     slasher_test_indiv(&[att1, att2], &slashings, 3);
+// }
 
-#[test]
-fn surrounded_by_single_val_single_chunk() {
-    let v = vec![0];
-    let att1 = indexed_att(&v, 0, 15, 0);
-    let att2 = indexed_att(&v, 1, 14, 0);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 15);
-}
+// #[test]
+// fn surrounds_existing_many_chunks() {
+//     let v = vec![0];
+//     let chunk_size = DEFAULT_CHUNK_SIZE as u64;
+//     let att1 = indexed_att(&v, 3 * chunk_size, 3 * chunk_size + 1, 0);
+//     let att2 = indexed_att(&v, 0, 3 * chunk_size + 2, 0);
+//     let slashings = hashset![att_slashing(&att2, &att1)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 4 * chunk_size);
+// }
 
-#[test]
-fn surrounded_by_single_val_multi_chunk() {
-    let v = vec![0];
-    let chunk_size = DEFAULT_CHUNK_SIZE as u64;
-    let att1 = indexed_att(&v, 0, 3 * chunk_size, 0);
-    let att2 = indexed_att(&v, chunk_size, chunk_size + 1, 0);
-    let slashings = hashset![att_slashing(&att1, &att2)];
-    let attestations = vec![att1, att2];
-    slasher_test_indiv(&attestations, &slashings, 3 * chunk_size);
-    slasher_test_indiv(&attestations, &slashings, 4 * chunk_size);
-}
+// #[test]
+// fn surrounded_by_single_val_single_chunk() {
+//     let v = vec![0];
+//     let att1 = indexed_att(&v, 0, 15, 0);
+//     let att2 = indexed_att(&v, 1, 14, 0);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 15);
+// }
+
+// #[test]
+// fn surrounded_by_single_val_multi_chunk() {
+//     let v = vec![0];
+//     let chunk_size = DEFAULT_CHUNK_SIZE as u64;
+//     let att1 = indexed_att(&v, 0, 3 * chunk_size, 0);
+//     let att2 = indexed_att(&v, chunk_size, chunk_size + 1, 0);
+//     let slashings = hashset![att_slashing(&att1, &att2)];
+//     let attestations = vec![att1, att2];
+//     slasher_test_indiv(&attestations, &slashings, 3 * chunk_size);
+//     slasher_test_indiv(&attestations, &slashings, 4 * chunk_size);
+// }
 
 // Process each attestation individually, and confirm that the slashings produced are as expected.
 fn slasher_test_indiv(
@@ -169,11 +195,13 @@ fn slasher_test(
     current_epoch: u64,
     should_process_after: impl Fn(usize) -> bool,
 ) {
+    println!("Setting things up");
     let tempdir = tempdir().unwrap();
     let config = Config::new(tempdir.path().into()).for_testing();
     let slasher = Slasher::open(config, logger()).unwrap();
     let current_epoch = Epoch::new(current_epoch);
 
+    println!("Accepting attestations");
     for (i, attestation) in attestations.iter().enumerate() {
         slasher.accept_attestation(attestation.clone());
 
@@ -181,7 +209,10 @@ fn slasher_test(
             slasher.process_queued(current_epoch).unwrap();
         }
     }
+    let start = std::time::Instant::now();
+    println!("Processing queue");
     slasher.process_queued(current_epoch).unwrap();
+    println!("Took {} seconds", start.elapsed().as_secs());
 
     let slashings = slasher.get_attester_slashings();
 

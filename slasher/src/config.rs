@@ -15,7 +15,7 @@ pub const DEFAULT_BROADCAST: bool = false;
 /// Mostly a workaround for Windows due to a bug in LMDB, see:
 ///
 /// https://github.com/sigp/lighthouse/issues/2342
-pub const TESTING_MAX_DB_SIZE: usize = 16; // MiB
+pub const TESTING_MAX_DB_SIZE: usize = 2048; // MiB
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
