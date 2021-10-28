@@ -522,7 +522,6 @@ pub fn update<E: EthSpec>(
     for validator_index in config.validator_indices_in_chunk(validator_chunk_index) {
         db.update_current_epoch_for_validator(validator_index, current_epoch, txn)?;
     }
-
     Ok(slashings)
 }
 
@@ -582,6 +581,7 @@ pub fn update_array<E: EthSpec, T: TargetArrayChunk>(
     let mut updated_chunks = BTreeMap::new();
 
     // Update the arrays for the change of current epoch.
+    let vals = config.validator_indices_in_chunk(validator_chunk_index);
     for validator_index in config.validator_indices_in_chunk(validator_chunk_index) {
         epoch_update_for_validator(
             db,

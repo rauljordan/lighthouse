@@ -167,10 +167,6 @@ impl<E: EthSpec> Slasher<E> {
         for (subqueue_id, subqueue) in grouped_attestations.subqueues.into_iter().enumerate() {
             let start = std::time::Instant::now();
             self.process_batch(txn, subqueue_id, subqueue.attestations, current_epoch)?;
-            println!(
-                "Processed batch in {} milliseconds",
-                start.elapsed().as_millis(),
-            );
         }
         Ok(AttestationStats { num_processed })
     }
