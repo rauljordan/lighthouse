@@ -148,7 +148,8 @@ impl<E: EthSpec> Slasher<E> {
         metrics::set_gauge(&SLASHER_NUM_ATTESTATIONS_DEFERRED, num_deferred as i64);
         metrics::set_gauge(&SLASHER_NUM_ATTESTATIONS_DROPPED, num_dropped as i64);
 
-        println!("Storing valid attestations in slasher DB");
+        println!("***Storing valid attestations in slasher DB");
+        let num_attestations = snapshot.attestations.len();
         for attestation in snapshot.attestations.iter() {
             self.db.store_indexed_attestation(
                 txn,
@@ -157,17 +158,26 @@ impl<E: EthSpec> Slasher<E> {
             )?;
         }
 
-        println!("Grouping attestations by validator chunk index");
+        println!("***Grouping attestations by validator chunk index");
         // Group attestations into batches and process them.
         let grouped_attestations = snapshot.group_by_validator_index(&self.config);
+        let num_grouped = grouped_attestations.subqueues.len();
         println!(
-            "Processing {} batches",
-            grouped_attestations.subqueues.len(),
+            "***Processing {} batches",
+            num_grouped
         );
+        
+        let start = std::time::Instant::now();
         for (subqueue_id, subqueue) in grouped_attestations.subqueues.into_iter().enumerate() {
-            let start = std::time::Instant::now();
+            let start_inner = std::time::Instant::now();
             self.process_batch(txn, subqueue_id, subqueue.attestations, current_epoch)?;
+            println!("***Took {} milliseconds, {} microseconds for batch", start_inner.elapsed().as_millis(), start_inner.elapsed().as_micros());
         }
+        println!(
+            "***Processed {} batches",
+            num_grouped
+        );
+        println!("***Took {} seconds for processing {} atts", start.elapsed().as_secs(), num_attestations);
         Ok(AttestationStats { num_processed })
     }
 

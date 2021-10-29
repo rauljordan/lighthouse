@@ -28,7 +28,7 @@ fn process_attestations_from_file() {
         let att: IndexedAttestation<E> = IndexedAttestation::from_ssz_bytes(&buffer).unwrap();
         attestations.push(att);
     }
-    let epoch = 74395;
+    let epoch = 74550;
 
     // Running the test on the first batch.
     let tempdir = tempdir().unwrap();
